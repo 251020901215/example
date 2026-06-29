@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Streak Tracker kiểu Duolingo</title>
+    <style>
+        :root {
+            --bg-color: #f7f9fa;
+            --primary: #58cc02;
+            --primary-shadow: #58a700;
+            --text-main: #4b4b4b;
+            --text-light: #afafaf;
+            --missed: #ff4b4b;
+            --frozen: #1cb0f6;
+            --fire: #ff9600;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+
+        .app-container {
+            background: white;
+            padding: 30px;
+            border-radius: 20px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+            width: 350px;
+            text-align: center;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 20px;
+            font-weight: bold;
+            font-size: 1.2em;
+        }
+
+        .streak-info {
+            color: var(--fire);
+        }
+
+        .freeze-info {
+            color: var(--frozen);
+        }
+
+        .title-rank {
+            font-size: 1.5em;
+            font-weight: 800;
+            margin: 10px 0 20px 0;
+            transition: all 0.3s;
+        }
+
+        /* Hiệu ứng bốc cháy cho danh hiệu */
+        .on-fire {
+            color: #ff4b4b;
+            text-shadow: 0 0 10px #ff9600, 0 0 20px #ff9600;
+            animation: burn 1.5s infinite alternate;
+        }
+
+        @keyframes burn {
+            0% { text-shadow: 0 0 5px #ff9600, 0 0 10px #ff4b4b; transform: scale(1); }
+            100% { text-shadow: 0 0 15px #ff9600, 0 0 25px #ff4b4b; transform: scale(1.05); }
+        }
+
+        .month-name {
+            font-size: 1.2em;
+            margin-bottom: 15px;
+            color: var(--text-light);
+        }
+
+        .calendar {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 8px;
+            margin-bottom: 20px;
+        }
+
+        .day-name {
+            font-size: 0.8em;
+            color: var(--text-light);
+            font-weight: bold;
+        }
+
+        .day {
+            aspect-ratio: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border-radius: 10px;
+            font-weight: bold;
+            background-color: #e5e5e5;
+            color: #fff;
+            position: relative;
+        }
+
+        .day.empty {
+            background-color: transparent;
+        }
+
+        .day.checked { background-color: var(--fire); }
+        .day.missed { background-color: var(--missed); }
+        .day.frozen { background-color: var(--frozen); }
+        
+        .day.today {
+            border: 3px solid var(--primary);
+            background-color: #fff;
+            color: var(--text-main);
+        }
+
+        .btn-checkin {
+            background-color: var(--primary);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 1.2em;
+            font-weight: bold;
+            border-radius: 15px;
+            cursor: pointer;
+            width: 100%;
+            box-shadow: 0 5px 0 var(--primary-shadow);
+            transition: transform 0.1s, box-shadow 0.1s;
+        }
+
+        .btn-checkin:active {
+            transform: translateY(5px);
+            box-shadow: 0 0 0 var(--primary-shadow);
+        }
+
+        .btn-checkin:disabled {
+            background-color: #e5e5e5;
+            box-shadow: 0 5px 0 #cfcfcf;
+            color: #afafaf;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="app-container">
+        <div class="header">
+            <div class="streak-info">🔥 <span id="streak-count">0</span></div>
+            <div class="freeze-info">❄️ <span id="freeze-count">1</span>/1</div>
+        </div>
+
+        <div id="rank-title" class="title-rank">Người Mới</div>
+        <div id="month-name" class="month-name">Tháng ...</div>
+
+        <div class="calendar" id="calendar-grid">
+            <!-- Tên các ngày trong tuần -->
+            <div class="day-name">T2</div><div class="day-name">T3</div><div class="day-name">T4</div>
+            <div class="day-name">T5</div><div class="day-name">T6</div><div class="day-name">T7</div><div class="day-name">CN</div>
+            <!-- Lịch sẽ được JS render vào đây -->
+        </div>
+
+        <button id="btn-checkin" class="btn-checkin" onclick="checkIn()">Điểm Danh Ngay</button>
+    </div>
+
+    <script>
+        // Lấy dữ liệu từ LocalStorage (để lưu lại kể cả khi tắt trình duyệt)
+        let streak = parseInt(localStorage.getItem('streak')) || 0;
+        let freezes = parseInt(localStorage.getItem('freezes')) ?? 1; // Mặc định có 1 thẻ đóng băng
+        let history = JSON.parse(localStorage.getItem('history')) || {}; 
+        let lastCheckIn = localStorage.getItem('lastCheckIn') || null;
+
+        const today = new Date();
+        const todayStr = formatDate(today);
+
+        function formatDate(date) {
+            return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+        }
+
+        function getDaysDifference(dateStr1, dateStr2) {
+            const d1 = new Date(dateStr1);
+            const d2 = new Date(dateStr2);
+            const diffTime = Math.abs(d2 - d1);
+            return Math.floor(diffTime / (1000 * 60 * 60 * 24));
+        }
+
+        function initApp() {
+            // Kiểm tra xem có bị đứt chuỗi không
+            if (lastCheckIn && lastCheckIn !== todayStr) {
+                let diff = getDaysDifference(lastCheckIn, todayStr);
+                
+                if (diff === 2) { // Bỏ lỡ ngày hôm qua
+                    let yesterday = new Date(today);
+                    yesterday.setDate(yesterday.getDate() - 1);
+                    let yesterdayStr = formatDate(yesterday);
+
+                    if (freezes > 0 && !history[yesterdayStr]) {
+                        // Tự động dùng thẻ đóng băng
+                        freezes--;
+                        history[yesterdayStr] = 'frozen';
+                        localStorage.setItem('freezes', freezes);
+                        alert("Bạn quên điểm danh hôm qua! Hệ thống đã tự động dùng 1 thẻ đóng băng ❄️");
+                    } else if (!history[yesterdayStr]) {
+                        // Không có thẻ đóng băng -> gãy chuỗi
+                        streak = 0;
+                        history[yesterdayStr] = 'missed';
+                    }
+                } else if (diff > 2) {
+                    // Bỏ lỡ quá 2 ngày -> gãy chuỗi hoàn toàn
+                    streak = 0;
+                    // Đánh dấu X cho tất cả các ngày bỏ lỡ
+                    for (let i = 1; i < diff; i++) {
+                        let missedDate = new Date(today);
+                        missedDate.setDate(missedDate.getDate() - i);
+                        history[formatDate(missedDate)] = 'missed';
+                    }
+                }
+                saveData();
+            }
+
+            updateUI();
+            renderCalendar();
+        }
+
+        function checkIn() {
+            if (history[todayStr] === 'checked') return; // Đã điểm danh rồi
+
+            streak++;
+            history[todayStr] = 'checked';
+            lastCheckIn = todayStr;
+            saveData();
+            updateUI();
+            renderCalendar();
+        }
+
+        function saveData() {
+            localStorage.setItem('streak', streak);
+            localStorage.setItem('freezes', freezes);
+            localStorage.setItem('history', JSON.stringify(history));
+            localStorage.setItem('lastCheckIn', lastCheckIn);
+        }
+
+        function updateUI() {
+            document.getElementById('streak-count').innerText = streak;
+            document.getElementById('freeze-count').innerText = freezes;
+
+            const btn = document.getElementById('btn-checkin');
+            if (history[todayStr] === 'checked') {
+                btn.innerText = "Đã Điểm Danh";
+                btn.disabled = true;
+            } else {
+                btn.innerText = "Điểm Danh Ngay";
+                btn.disabled = false;
+            }
+
+            // Cập nhật danh hiệu và hiệu ứng
+            const rankEl = document.getElementById('rank-title');
+            if (streak === 0) {
+                rankEl.innerText = "Người Mới";
+                rankEl.className = "title-rank";
+            } else if (streak >= 1 && streak <= 4) {
+                rankEl.innerText = "Đang Nóng Máy";
+                rankEl.className = "title-rank";
+            } else if (streak >= 5) {
+                rankEl.innerText = "Kẻ Kỷ Luật 🔥";
+                rankEl.className = "title-rank on-fire"; // Thêm class bốc cháy
+            }
+        }
+
+        function renderCalendar() {
+            const calendarGrid = document.getElementById('calendar-grid');
+            // Xóa các ngày cũ, giữ lại phần tên T2, T3...
+            while (calendarGrid.childNodes.length > 15) {
+                calendarGrid.removeChild(calendarGrid.lastChild);
+            }
+
+            const monthNames = ["Tháng 1", "Tháng 2", "Tháng 3", "Tháng 4", "Tháng 5", "Tháng 6", "Tháng 7", "Tháng 8", "Tháng 9", "Tháng 10", "Tháng 11", "Tháng 12"];
+            document.getElementById('month-name').innerText = monthNames[today.getMonth()] + " - " + today.getFullYear();
+
+            const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+            const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+            
+            // Tính số ô trống đầu tháng (Chuyển Chủ Nhật từ 0 thành 7 để đồng bộ T2-CN)
+            let startDayOfWeek = firstDay.getDay() === 0 ? 7 : firstDay.getDay();
+            
+            // Vẽ ô trống đầu tháng
+            for (let i = 1; i < startDayOfWeek; i++) {
+                let emptyDiv = document.createElement('div');
+                emptyDiv.className = 'day empty';
+                calendarGrid.appendChild(emptyDiv);
+            }
+
+            // Vẽ các ngày trong tháng
+            for (let i = 1; i <= lastDay.getDate(); i++) {
+                let dateObj = new Date(today.getFullYear(), today.getMonth(), i);
+                let dateStr = formatDate(dateObj);
+                let dayDiv = document.createElement('div');
+                dayDiv.className = 'day';
+                
+                // Nội dung mặc định là số ngày
+                dayDiv.innerText = i;
+
+                // Xử lý trạng thái của ngày
+                if (history[dateStr] === 'checked') {
+                    dayDiv.classList.add('checked');
+                    dayDiv.innerText = '✔️';
+                } else if (history[dateStr] === 'missed') {
+                    dayDiv.classList.add('missed');
+                    dayDiv.innerText = '❌';
+                } else if (history[dateStr] === 'frozen') {
+                    dayDiv.classList.add('frozen');
+                    dayDiv.innerText = '❄️';
+                } else if (dateStr === todayStr && !history[dateStr]) {
+                    dayDiv.classList.add('today');
+                }
+
+                calendarGrid.appendChild(dayDiv);
+            }
+        }
+
+        // Chạy khởi tạo khi tải trang
+        initApp();
+    </script>
+</body>
+</html>
